@@ -1,0 +1,110 @@
+{
+  "name": "book-studio",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "vite dev --port 3000",
+    "generate-routes": "tsr generate",
+    "build": "vite build",
+    "preview": "vite preview",
+    "format": "biome format",
+    "lint": "biome lint",
+    "check": "biome check",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^10.3.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/ai": "0.69.0",
+    "@tanstack/ai-anthropic": "0.22.0",
+    "@tanstack/ai-client": "0.39.3",
+    "@tanstack/ai-gemini": "0.38.0",
+    "@tanstack/ai-ollama": "0.12.0",
+    "@tanstack/ai-openai": "0.30.0",
+    "@tanstack/ai-react": "0.30.4",
+    "@tanstack/match-sorter-utils": "9.2.6",
+    "@tanstack/query-db-collection": "1.4.4",
+    "@tanstack/react-db": "0.5.9",
+    "@tanstack/react-devtools": "0.10.13",
+    "@tanstack/react-form": "1.33.5",
+    "@tanstack/react-query": "5.104.2",
+    "@tanstack/react-query-devtools": "5.104.2",
+    "@tanstack/react-router": "1.170.44",
+    "@tanstack/react-router-devtools": "1.167.2",
+    "@tanstack/react-router-ssr-query": "1.167.3",
+    "@tanstack/react-start": "1.169.1",
+    "@tanstack/react-store": "0.11.2",
+    "@tanstack/react-table": "9.3.1",
+    "@tanstack/store": "0.11.2",
+    "@trpc/client": "^11.11.0",
+    "@trpc/server": "^11.11.0",
+    "@trpc/tanstack-react-query": "^11.11.0",
+    "@workos-inc/node": "^10.8.0",
+    "@workos/authkit-tanstack-react-start": "^0.11.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cn": "^0.4.0",
+    "highlight.js": "^11.11.1",
+    "lucide-react": "^0.577.0",
+    "marked": "^15.0.8",
+    "nitro": "3.0.260610-beta",
+    "radix-ui": "^1.8.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "streamdown": "^2.3.0",
+    "superjson": "^2.2.2",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss": "^4.1.18",
+    "tailwindcss-animate": "^1.0.7",
+    "tw-animate-css": "^1.3.6",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.5",
+    "@chromatic-com/storybook": "latest",
+    "@content-collections/core": "^0.13.1",
+    "@content-collections/vite": "^0.3.0",
+    "@inlang/paraglide-js": "^2.13.1",
+    "@rolldown/plugin-babel": "^0.2.3",
+    "@storybook/addon-a11y": "^10.6.2",
+    "@storybook/addon-docs": "^10.6.2",
+    "@storybook/addon-mcp": "^10.6.2",
+    "@storybook/addon-vitest": "^10.6.2",
+    "@storybook/tanstack-react": "^10.6.2",
+    "@tailwindcss/typography": "^0.5.16",
+    "@tanstack/devtools-event-client": "0.5.0",
+    "@tanstack/devtools-vite": "0.8.5",
+    "@tanstack/router-cli": "^1.132.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/browser-playwright": "latest",
+    "@vitest/coverage-v8": "latest",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "playwright": "latest",
+    "storybook": "^10.6.2",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0",
+    "vitest": "latest"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lightningcss"
+    ]
+  },
+  "engines": {
+    "node": ">=22.11.0"
+  },
+  "intent": {
+    "skills": [
+      "*"
+    ]
+  }
+}
