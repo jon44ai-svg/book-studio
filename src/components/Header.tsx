@@ -1,13 +1,15 @@
 import { Link } from '@tanstack/react-router'
-import { BookOpen, Feather } from 'lucide-react'
+import { Feather, Sparkles } from 'lucide-react'
 
 export default function Header() {
   return (
     <header className="site-header">
       <nav aria-label="Main navigation" className="site-nav">
         <Link aria-label="Book Studio home" className="brand-lockup" to="/">
-          <span className="brand-mark"><BookOpen size={19} strokeWidth={1.7} /></span>
-          <span className="brand-name">common<span>place</span></span>
+          <span aria-hidden="true" className="brand-mark">
+            <Sparkles size={18} strokeWidth={1.8} />
+          </span>
+          <span className="brand-name">commonplace</span>
           <span className="brand-divider" />
           <span className="brand-product">BOOK STUDIO</span>
         </Link>

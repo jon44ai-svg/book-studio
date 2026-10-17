@@ -122,6 +122,12 @@ function invariant<T>(value: T | null | undefined, message: string): T {
 	if (value == null) throw new Error(message);
 	return value;
 }
+function numberRow(row: unknown): number {
+	const value = Number((row as { n?: unknown })?.n);
+	if (!Number.isFinite(value))
+		throw new Error("Invalid numeric database value");
+	return value;
+}
 
 export function defaultSettings(): Settings {
 	return {
@@ -260,25 +266,25 @@ export async function getNovella(bookId: string): Promise<NovellaView | null> {
 			),
 		},
 		usage: {
-			requests: (
-				(await db
+			requests: numberRow(
+				await db
 					.prepare("SELECT COUNT(*) n FROM usage WHERE book_id=?")
-					.get(bookId)) as { n: number }
-			).n,
-			inputTokens: (
-				(await db
+					.get(bookId),
+			),
+			inputTokens: numberRow(
+				await db
 					.prepare(
 						"SELECT COALESCE(SUM(input_tokens),0) n FROM usage WHERE book_id=?",
 					)
-					.get(bookId)) as { n: number }
-			).n,
-			outputTokens: (
-				(await db
+					.get(bookId),
+			),
+			outputTokens: numberRow(
+				await db
 					.prepare(
 						"SELECT COALESCE(SUM(output_tokens),0) n FROM usage WHERE book_id=?",
 					)
-					.get(bookId)) as { n: number }
-			).n,
+					.get(bookId),
+			),
 		},
 		progress: { done, total: tasks.length },
 		tasks: tasks.map((t) => ({
@@ -364,10 +370,12 @@ export async function startRun(bookId: string): Promise<NovellaView> {
 			await getNovella(bookId),
 			"Novella not found while running",
 		);
-	const existingTasks = (await db
-		.prepare("SELECT COUNT(*) n FROM tasks WHERE book_id=?")
-		.get(bookId)) as { n: number };
-	if (p.status === "completed" && existingTasks.n)
+	const existingTaskCount = numberRow(
+		await db
+			.prepare("SELECT COUNT(*) n FROM tasks WHERE book_id=?")
+			.get(bookId),
+	);
+	if (p.status === "completed" && existingTaskCount > 0)
 		return invariant(
 			await getNovella(bookId),
 			"Novella not found after completion",
@@ -375,7 +383,8 @@ export async function startRun(bookId: string): Promise<NovellaView> {
 	const apiKey = await getEffectiveGroqCredential();
 	if (!apiKey)
 		throw new GroqError("No Groq API key is configured", null, false, null);
-	if (!existingTasks.n) await makeTasks(bookId, s);
+	const expectedTaskCount = s.chapterCount + 5;
+	if (existingTaskCount !== expectedTaskCount) await makeTasks(bookId, s);
 	await setStatus(bookId, "running");
 	const state = active.get(bookId) ?? {
 		running: 0,
@@ -714,11 +723,11 @@ async function applyResult(
 				"Novella not found while applying result",
 			).settings,
 		);
-		const issueCount = (
-			(await db
+		const issueCount = numberRow(
+			await db
 				.prepare("SELECT COUNT(*) n FROM issues WHERE book_id=?")
-				.get(bookId)) as { n: number }
-		).n;
+				.get(bookId),
+		);
 		if (settings.reviseRounds < 1 || issueCount === 0) {
 			await db
 				.prepare(
@@ -780,19 +789,23 @@ async function pump(bookId: string, apiKey: string): Promise<void> {
 			}
 		}
 		if (!task) {
-			const unfinished = (await db
-				.prepare(
-					"SELECT COUNT(*) n FROM tasks WHERE book_id=? AND status NOT IN ('completed','failed')",
-				)
-				.get(bookId)) as { n: number };
-			const failed = (await db
-				.prepare(
-					"SELECT COUNT(*) n FROM tasks WHERE book_id=? AND status='failed'",
-				)
-				.get(bookId)) as { n: number };
-			if (!unfinished.n) {
-				await setStatus(bookId, failed.n ? "failed" : "completed");
-				await addLog(bookId, failed.n ? "Run failed" : "Run completed");
+			const unfinished = numberRow(
+				await db
+					.prepare(
+						"SELECT COUNT(*) n FROM tasks WHERE book_id=? AND status NOT IN ('completed','failed')",
+					)
+					.get(bookId),
+			);
+			const failed = numberRow(
+				await db
+					.prepare(
+						"SELECT COUNT(*) n FROM tasks WHERE book_id=? AND status='failed'",
+					)
+					.get(bookId),
+			);
+			if (!unfinished) {
+				await setStatus(bookId, failed ? "failed" : "completed");
+				await addLog(bookId, failed ? "Run failed" : "Run completed");
 			}
 			break;
 		}
