@@ -17,8 +17,8 @@ export type Book = {
 export async function listBooks(): Promise<Array<Book>> {
 	return (await database
 		.prepare(`
-    SELECT id, title, author, genre, summary, content, status, cover,
-      created_at AS createdAt, updated_at AS updatedAt
+	    SELECT id, title, author, genre, summary, content, status, cover,
+	      created_at AS "createdAt", updated_at AS "updatedAt"
     FROM books ORDER BY updated_at DESC
   `)
 		.all()) as unknown as Array<Book>;
@@ -28,8 +28,8 @@ export async function getBook(id: string): Promise<Book | null> {
 	return (
 		((await database
 			.prepare(`
-    SELECT id, title, author, genre, summary, content, status, cover,
-      created_at AS createdAt, updated_at AS updatedAt
+	    SELECT id, title, author, genre, summary, content, status, cover,
+	      created_at AS "createdAt", updated_at AS "updatedAt"
     FROM books WHERE id = ?
   `)
 			.get(id)) as Book | undefined) ?? null

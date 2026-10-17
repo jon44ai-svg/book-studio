@@ -203,7 +203,7 @@ export async function getNovella(bookId: string): Promise<NovellaView | null> {
 	const settings = parse<Settings>(p.settings);
 	const tasks = (await db
 		.prepare(
-			"SELECT id,type,chapter_number AS chapter,status,model,attempts,cost_usd AS cost,reserved_usd AS reservedUsd,error,deps,result,envelope FROM tasks WHERE book_id = ? ORDER BY CASE type WHEN 'planner' THEN 1 WHEN 'bible' THEN 2 WHEN 'outline' THEN 3 WHEN 'writer' THEN 4 WHEN 'auditor' THEN 5 WHEN 'editor' THEN 6 ELSE 7 END, chapter_number, id",
+			"SELECT id,type,chapter_number AS chapter,status,model,attempts,cost_usd AS cost,reserved_usd AS \"reservedUsd\",error,deps,result,envelope FROM tasks WHERE book_id = ? ORDER BY CASE type WHEN 'planner' THEN 1 WHEN 'bible' THEN 2 WHEN 'outline' THEN 3 WHEN 'writer' THEN 4 WHEN 'auditor' THEN 5 WHEN 'editor' THEN 6 ELSE 7 END, chapter_number, id",
 		)
 		.all(bookId)) as unknown as TaskRow[];
 	const chapters = (await db
@@ -223,7 +223,7 @@ export async function getNovella(bookId: string): Promise<NovellaView | null> {
 		.all(bookId)) as unknown as IssueView[];
 	const logs = (await db
 		.prepare(
-			"SELECT id,message,created_at AS createdAt FROM logs WHERE book_id = ? ORDER BY created_at, id",
+			'SELECT id,message,created_at AS "createdAt" FROM logs WHERE book_id = ? ORDER BY created_at, id',
 		)
 		.all(bookId)) as Array<{ id: string; message: string; createdAt: string }>;
 	const cost = await money(bookId);
@@ -758,7 +758,7 @@ async function pump(bookId: string, apiKey: string): Promise<void> {
 	while (!state.paused && state.running < s.maxConcurrent) {
 		const rows = (await db
 			.prepare(
-				"SELECT id,book_id,type,chapter_number AS chapter,status,model,attempts,cost_usd AS cost,reserved_usd AS reservedUsd,error,deps,result,envelope FROM tasks WHERE book_id=? AND status='queued' ORDER BY CASE type WHEN 'planner' THEN 1 WHEN 'bible' THEN 2 WHEN 'outline' THEN 3 WHEN 'writer' THEN 4 WHEN 'auditor' THEN 5 WHEN 'editor' THEN 6 ELSE 7 END, chapter_number, id",
+				"SELECT id,book_id,type,chapter_number AS chapter,status,model,attempts,cost_usd AS cost,reserved_usd AS \"reservedUsd\",error,deps,result,envelope FROM tasks WHERE book_id=? AND status='queued' ORDER BY CASE type WHEN 'planner' THEN 1 WHEN 'bible' THEN 2 WHEN 'outline' THEN 3 WHEN 'writer' THEN 4 WHEN 'auditor' THEN 5 WHEN 'editor' THEN 6 ELSE 7 END, chapter_number, id",
 			)
 			.all(bookId)) as unknown as TaskRow[];
 		let task: TaskRow | undefined;
