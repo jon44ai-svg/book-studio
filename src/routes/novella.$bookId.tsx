@@ -8,6 +8,7 @@ import {
 	Save,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { GenerationProgress } from "#/components/GenerationProgress";
 import {
 	deleteGroqCredentialFn,
 	getBookFn,
@@ -34,6 +35,7 @@ import {
 	buildPdf,
 	buildText,
 	type ExportDoc,
+	getExportFilename,
 	validateDoc,
 } from "#/lib/novella-export";
 
@@ -650,9 +652,12 @@ function RunPanel({
 				<Stat label="Output tokens" value={usage.outputTokens} />
 			</div>
 
-			<p className="text-sm">
-				Progress: <strong>{progress.done}</strong> / {progress.total} tasks
-			</p>
+			<GenerationProgress
+				done={progress.done}
+				status={view.status}
+				tasks={tasks}
+				total={progress.total}
+			/>
 
 			<div className="overflow-x-auto">
 				<table className="w-full text-xs text-left">
@@ -743,12 +748,6 @@ function ManuscriptPanel({
 	const problems = chapters.length
 		? validateDoc(doc)
 		: ["No chapters to export yet"];
-	const slug =
-		(doc.title || "novella")
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/^-|-$/g, "") || "novella";
-
 	function download(name: string, data: string | Uint8Array, type: string) {
 		const part = typeof data === "string" ? data : new Uint8Array(data);
 		const url = URL.createObjectURL(new Blob([part], { type }));
@@ -760,11 +759,22 @@ function ManuscriptPanel({
 	}
 
 	const exporters = {
-		md: () => download(`${slug}.md`, buildMarkdown(doc), "text/markdown"),
-		txt: () => download(`${slug}.txt`, buildText(doc), "text/plain"),
+		md: () =>
+			download(
+				getExportFilename(doc, "md"),
+				buildMarkdown(doc),
+				"text/markdown",
+			),
+		txt: () =>
+			download(getExportFilename(doc, "txt"), buildText(doc), "text/plain"),
 		epub: () =>
-			download(`${slug}.epub`, buildEpub(doc), "application/epub+zip"),
-		pdf: () => download(`${slug}.pdf`, buildPdf(doc), "application/pdf"),
+			download(
+				getExportFilename(doc, "epub"),
+				buildEpub(doc),
+				"application/epub+zip",
+			),
+		pdf: () =>
+			download(getExportFilename(doc, "pdf"), buildPdf(doc), "application/pdf"),
 	} as const;
 
 	return (

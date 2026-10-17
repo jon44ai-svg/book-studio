@@ -138,7 +138,9 @@ async function waitFor(
 	let latest: NovellaView | null = null;
 	for (let attempt = 0; attempt < 200; attempt++) {
 		latest = invariant(
-			invariant(runner, "Novella runner is not loaded").getNovella(bookId),
+			await invariant(runner, "Novella runner is not loaded").getNovella(
+				bookId,
+			),
 			`Novella ${bookId} was not found`,
 		);
 		if (predicate(latest)) return latest;
@@ -165,8 +167,8 @@ export async function selfCheck(): Promise<void> {
 	books = await import("./books.server");
 	const novellaRunner = invariant(runner, "Novella runner is not loaded");
 	const bookStore = invariant(books, "Book store is not loaded");
-	const book = bookStore.createBook(brief.title);
-	const initial = novellaRunner.saveBrief(book.id, brief, settings());
+	const book = await bookStore.createBook(brief.title);
+	const initial = await novellaRunner.saveBrief(book.id, brief, settings());
 	expect(initial.status).toBe("idle");
 
 	await novellaRunner.startRun(book.id);
@@ -201,8 +203,8 @@ export async function selfCheck(): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, 40));
 	expect(stats.total).toBe(requestsAfterCompletion);
 
-	const exhaustedBook = bookStore.createBook("Budget Exhaustion");
-	novellaRunner.saveBrief(
+	const exhaustedBook = await bookStore.createBook("Budget Exhaustion");
+	await novellaRunner.saveBrief(
 		exhaustedBook.id,
 		brief,
 		settings({
@@ -223,8 +225,12 @@ export async function selfCheck(): Promise<void> {
 	expect(exhausted.tasks[0]?.status).toBe("queued");
 
 	stats.failures = ["json_validate_failed", "truncated"];
-	const malformedBook = bookStore.createBook("Malformed JSON Recovery");
-	novellaRunner.saveBrief(malformedBook.id, brief, settings({ retryMax: 2 }));
+	const malformedBook = await bookStore.createBook("Malformed JSON Recovery");
+	await novellaRunner.saveBrief(
+		malformedBook.id,
+		brief,
+		settings({ retryMax: 2 }),
+	);
 	await novellaRunner.startRun(malformedBook.id);
 	const recovered = await waitFor(
 		malformedBook.id,

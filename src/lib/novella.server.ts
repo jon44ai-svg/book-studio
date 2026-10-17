@@ -106,41 +106,13 @@ type ProjectRow = {
 	settings: string;
 	status: RunStatus;
 };
-type Active = { running: number; models: Map<string, number>; paused: boolean };
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS projects (
-    book_id TEXT PRIMARY KEY, brief TEXT NOT NULL, settings TEXT NOT NULL,
-    status TEXT NOT NULL, spent_usd REAL NOT NULL DEFAULT 0,
-    reserved_usd REAL NOT NULL DEFAULT 0, uncertain_usd REAL NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY, book_id TEXT NOT NULL, type TEXT NOT NULL,
-    chapter_number INTEGER, deps TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL,
-    model TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
-    reserved_usd REAL NOT NULL DEFAULT 0, error TEXT, result TEXT,
-    envelope TEXT NOT NULL DEFAULT 'drafting'
-  );
-  CREATE TABLE IF NOT EXISTS usage (
-    id TEXT PRIMARY KEY, task_id TEXT NOT NULL, book_id TEXT NOT NULL, attempt INTEGER NOT NULL,
-    model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
-    cost_usd REAL NOT NULL DEFAULT 0, reserved_usd REAL NOT NULL DEFAULT 0,
-    uncertain INTEGER NOT NULL DEFAULT 0, error TEXT, created_at TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS chapters (
-    book_id TEXT NOT NULL, number INTEGER NOT NULL, title TEXT NOT NULL DEFAULT '',
-    content TEXT NOT NULL DEFAULT '', revised INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (book_id, number)
-  );
-  CREATE TABLE IF NOT EXISTS issues (
-    id TEXT PRIMARY KEY, book_id TEXT NOT NULL, severity TEXT NOT NULL,
-    chapter_number INTEGER, evidence TEXT NOT NULL, fix TEXT
-  );
-  CREATE TABLE IF NOT EXISTS logs (
-    id TEXT PRIMARY KEY, book_id TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL
-  );
-`);
+type Active = {
+	running: number;
+	models: Map<string, number>;
+	paused: boolean;
+	pumping: boolean;
+	claimed: Set<string>;
+};
 
 const active = new Map<string, Active>();
 const now = () => new Date().toISOString();
@@ -177,8 +149,10 @@ export function validateSettings(s: Settings): string[] {
 		errors.push("Budgets cannot be negative");
 	if (s.draftingUsd + s.reserveUsd > s.totalUsd)
 		errors.push("Drafting and reserve budgets exceed total");
-	if (s.chapterCount < 1 || s.targetWords < 100)
-		errors.push("Chapter count and target words are invalid");
+	if (s.chapterCount < 1 || s.chapterCount > 20 || s.targetWords < 100)
+		errors.push(
+			"Chapter count must be between 1 and 20, and target words must be at least 100",
+		);
 	for (const model of [s.planner, s.writer, s.auditor, s.editor]) {
 		const price = s.pricing[model];
 		if (!model || !price || price.input <= 0 || price.output <= 0)
@@ -194,74 +168,76 @@ export function validateSettings(s: Settings): string[] {
 	return errors;
 }
 
-function project(bookId: string): ProjectRow | null {
+async function project(bookId: string): Promise<ProjectRow | null> {
 	return (
-		(db
+		((await db
 			.prepare(
 				"SELECT book_id, brief, settings, status FROM projects WHERE book_id = ?",
 			)
-			.get(bookId) as ProjectRow | undefined) ?? null
+			.get(bookId)) as ProjectRow | undefined) ?? null
 	);
 }
-function addLog(bookId: string, message: string) {
-	db.prepare(
-		"INSERT INTO logs (id, book_id, message, created_at) VALUES (?, ?, ?, ?)",
-	).run(randomUUID(), bookId, message, now());
+async function addLog(bookId: string, message: string) {
+	await db
+		.prepare(
+			"INSERT INTO logs (id, book_id, message, created_at) VALUES (?, ?, ?, ?)",
+		)
+		.run(randomUUID(), bookId, message, now());
 }
-function setStatus(bookId: string, status: RunStatus) {
-	db.prepare(
-		"UPDATE projects SET status = ?, updated_at = ? WHERE book_id = ?",
-	).run(status, now(), bookId);
+async function setStatus(bookId: string, status: RunStatus) {
+	await db
+		.prepare("UPDATE projects SET status = ?, updated_at = ? WHERE book_id = ?")
+		.run(status, now(), bookId);
 }
-function money(bookId: string) {
-	return db
+async function money(bookId: string) {
+	return (await db
 		.prepare(
 			"SELECT COALESCE(SUM(CASE WHEN uncertain=0 THEN cost_usd ELSE 0 END),0) spent, COALESCE(SUM(reserved_usd),0) reserved, COALESCE(SUM(CASE WHEN uncertain=1 THEN cost_usd ELSE 0 END),0) uncertain FROM usage WHERE book_id = ?",
 		)
-		.get(bookId) as { spent: number; reserved: number; uncertain: number };
+		.get(bookId)) as { spent: number; reserved: number; uncertain: number };
 }
 
-export function getNovella(bookId: string): NovellaView | null {
-	const p = project(bookId);
+export async function getNovella(bookId: string): Promise<NovellaView | null> {
+	const p = await project(bookId);
 	if (!p) return null;
 	const settings = parse<Settings>(p.settings);
-	const tasks = db
+	const tasks = (await db
 		.prepare(
-			"SELECT id,type,chapter_number AS chapter,status,model,attempts,cost_usd AS cost,reserved_usd AS reservedUsd,error,deps,result,envelope FROM tasks WHERE book_id = ? ORDER BY rowid",
+			"SELECT id,type,chapter_number AS chapter,status,model,attempts,cost_usd AS cost,reserved_usd AS reservedUsd,error,deps,result,envelope FROM tasks WHERE book_id = ? ORDER BY CASE type WHEN 'planner' THEN 1 WHEN 'bible' THEN 2 WHEN 'outline' THEN 3 WHEN 'writer' THEN 4 WHEN 'auditor' THEN 5 WHEN 'editor' THEN 6 ELSE 7 END, chapter_number, id",
 		)
-		.all(bookId) as unknown as TaskRow[];
-	const chapters = db
+		.all(bookId)) as unknown as TaskRow[];
+	const chapters = (await db
 		.prepare(
 			"SELECT number,title,content,revised FROM chapters WHERE book_id = ? ORDER BY number",
 		)
-		.all(bookId) as unknown as Array<{
+		.all(bookId)) as unknown as Array<{
 		number: number;
 		title: string;
 		content: string;
 		revised: number;
 	}>;
-	const issues = db
+	const issues = (await db
 		.prepare(
-			"SELECT id,severity,chapter_number AS chapter,evidence,fix FROM issues WHERE book_id = ? ORDER BY rowid",
+			"SELECT id,severity,chapter_number AS chapter,evidence,fix FROM issues WHERE book_id = ? ORDER BY id",
 		)
-		.all(bookId) as unknown as IssueView[];
-	const logs = db
+		.all(bookId)) as unknown as IssueView[];
+	const logs = (await db
 		.prepare(
-			"SELECT id,message,created_at AS createdAt FROM logs WHERE book_id = ? ORDER BY rowid",
+			"SELECT id,message,created_at AS createdAt FROM logs WHERE book_id = ? ORDER BY created_at, id",
 		)
-		.all(bookId) as Array<{ id: string; message: string; createdAt: string }>;
-	const cost = money(bookId);
+		.all(bookId)) as Array<{ id: string; message: string; createdAt: string }>;
+	const cost = await money(bookId);
 	const total = settings.totalUsd;
-	const draftingSpent = db
+	const draftingSpent = (await db
 		.prepare(
 			"SELECT COALESCE(SUM(u.cost_usd),0) value FROM usage u JOIN tasks t ON t.id=u.task_id WHERE u.book_id=? AND t.envelope='drafting'",
 		)
-		.get(bookId) as { value: number };
-	const reserveSpent = db
+		.get(bookId)) as { value: number };
+	const reserveSpent = (await db
 		.prepare(
 			"SELECT COALESCE(SUM(u.cost_usd),0) value FROM usage u JOIN tasks t ON t.id=u.task_id WHERE u.book_id=? AND t.envelope='reserve'",
 		)
-		.get(bookId) as { value: number };
+		.get(bookId)) as { value: number };
 	const done = tasks.filter((t) => t.status === "completed").length;
 	return {
 		bookId,
@@ -285,23 +261,23 @@ export function getNovella(bookId: string): NovellaView | null {
 		},
 		usage: {
 			requests: (
-				db
+				(await db
 					.prepare("SELECT COUNT(*) n FROM usage WHERE book_id=?")
-					.get(bookId) as { n: number }
+					.get(bookId)) as { n: number }
 			).n,
 			inputTokens: (
-				db
+				(await db
 					.prepare(
 						"SELECT COALESCE(SUM(input_tokens),0) n FROM usage WHERE book_id=?",
 					)
-					.get(bookId) as { n: number }
+					.get(bookId)) as { n: number }
 			).n,
 			outputTokens: (
-				db
+				(await db
 					.prepare(
 						"SELECT COALESCE(SUM(output_tokens),0) n FROM usage WHERE book_id=?",
 					)
-					.get(bookId) as { n: number }
+					.get(bookId)) as { n: number }
 			).n,
 		},
 		progress: { done, total: tasks.length },
@@ -320,33 +296,37 @@ export function getNovella(bookId: string): NovellaView | null {
 	};
 }
 
-export function saveBrief(
+export async function saveBrief(
 	bookId: string,
 	brief: Brief,
 	settings: Settings,
-): NovellaView {
+): Promise<NovellaView> {
 	const errors = validateSettings(settings);
 	if (errors.length) throw new Error(errors.join("; "));
-	if (!getBook(bookId)) throw new Error("Book not found");
-	const existing = project(bookId);
+	if (!(await getBook(bookId))) throw new Error("Book not found");
+	const existing = await project(bookId);
 	if (!existing) {
-		db.prepare(
-			"INSERT INTO projects (book_id,brief,settings,status,updated_at) VALUES (?,?,?,?,?)",
-		).run(bookId, json(brief), json(settings), "idle", now());
+		await db
+			.prepare(
+				"INSERT INTO projects (book_id,brief,settings,status,updated_at) VALUES (?,?,?,?,?)",
+			)
+			.run(bookId, json(brief), json(settings), "idle", now());
 	} else {
 		if (existing.status === "running")
 			throw new Error("Cannot edit a running novella");
-		db.prepare(
-			"UPDATE projects SET brief=?, settings=?, updated_at=? WHERE book_id=?",
-		).run(json(brief), json(settings), now(), bookId);
+		await db
+			.prepare(
+				"UPDATE projects SET brief=?, settings=?, updated_at=? WHERE book_id=?",
+			)
+			.run(json(brief), json(settings), now(), bookId);
 	}
-	addLog(bookId, "Brief and settings saved");
-	return invariant(getNovella(bookId), "Novella not found after saving");
+	await addLog(bookId, "Brief and settings saved");
+	return invariant(await getNovella(bookId), "Novella not found after saving");
 }
 
-function makeTasks(bookId: string, s: Settings) {
-	db.prepare("DELETE FROM tasks WHERE book_id=?").run(bookId);
-	const add = (
+async function makeTasks(bookId: string, s: Settings) {
+	await db.prepare("DELETE FROM tasks WHERE book_id=?").run(bookId);
+	const add = async (
 		type: string,
 		model: string,
 		deps: string[],
@@ -354,85 +334,108 @@ function makeTasks(bookId: string, s: Settings) {
 		envelope: "drafting" | "reserve",
 	) => {
 		const id = `${bookId}:${type}${chapter == null ? "" : `:${chapter}`}`;
-		db.prepare(
-			"INSERT INTO tasks (id,book_id,type,chapter_number,deps,status,model,envelope) VALUES (?,?,?,?,?,?,?,?)",
-		).run(id, bookId, type, chapter, json(deps), "queued", model, envelope);
+		await db
+			.prepare(
+				"INSERT INTO tasks (id,book_id,type,chapter_number,deps,status,model,envelope) VALUES (?,?,?,?,?,?,?,?)",
+			)
+			.run(id, bookId, type, chapter, json(deps), "queued", model, envelope);
 		return id;
 	};
-	const planner = add("planner", s.planner, [], null, "drafting");
-	const bible = add("bible", s.writer, [planner], null, "drafting");
-	const outline = add("outline", s.writer, [planner], null, "drafting");
-	const writers = Array.from({ length: s.chapterCount }, (_, i) =>
-		add("writer", s.writer, [bible, outline], i + 1, "drafting"),
+	const planner = await add("planner", s.planner, [], null, "drafting");
+	const bible = await add("bible", s.writer, [planner], null, "drafting");
+	const outline = await add("outline", s.writer, [planner], null, "drafting");
+	const writers = await Promise.all(
+		Array.from({ length: s.chapterCount }, (_, i) =>
+			add("writer", s.writer, [bible, outline], i + 1, "drafting"),
+		),
 	);
-	const auditor = add("auditor", s.auditor, writers, null, "reserve");
-	add("editor", s.editor, [auditor], null, "reserve");
+	const auditor = await add("auditor", s.auditor, writers, null, "reserve");
+	await add("editor", s.editor, [auditor], null, "reserve");
 }
 
 export async function startRun(bookId: string): Promise<NovellaView> {
-	const p = project(bookId);
+	const p = await project(bookId);
 	if (!p) throw new Error("Save a brief before starting");
 	const s = parse<Settings>(p.settings);
 	const errors = validateSettings(s);
 	if (errors.length) throw new Error(errors.join("; "));
 	if (p.status === "running")
-		return invariant(getNovella(bookId), "Novella not found while running");
-	const existingTasks = db
+		return invariant(
+			await getNovella(bookId),
+			"Novella not found while running",
+		);
+	const existingTasks = (await db
 		.prepare("SELECT COUNT(*) n FROM tasks WHERE book_id=?")
-		.get(bookId) as { n: number };
+		.get(bookId)) as { n: number };
 	if (p.status === "completed" && existingTasks.n)
-		return invariant(getNovella(bookId), "Novella not found after completion");
+		return invariant(
+			await getNovella(bookId),
+			"Novella not found after completion",
+		);
 	const apiKey = await getEffectiveGroqCredential();
 	if (!apiKey)
 		throw new GroqError("No Groq API key is configured", null, false, null);
-	if (!existingTasks.n) makeTasks(bookId, s);
-	setStatus(bookId, "running");
+	if (!existingTasks.n) await makeTasks(bookId, s);
+	await setStatus(bookId, "running");
 	const state = active.get(bookId) ?? {
 		running: 0,
 		models: new Map(),
 		paused: false,
+		pumping: false,
+		claimed: new Set(),
 	};
 	state.paused = false;
 	active.set(bookId, state);
-	addLog(bookId, "Run started");
+	await addLog(bookId, "Run started");
 	void pump(bookId, apiKey);
-	return invariant(getNovella(bookId), "Novella not found after starting");
+	return invariant(
+		await getNovella(bookId),
+		"Novella not found after starting",
+	);
 }
 
-export function pauseRun(bookId: string): NovellaView {
-	const p = project(bookId);
+export async function pauseRun(bookId: string): Promise<NovellaView> {
+	const p = await project(bookId);
 	if (!p) throw new Error("Novella not found");
 	const state = active.get(bookId);
 	if (state) state.paused = true;
-	setStatus(bookId, "paused");
-	addLog(bookId, "Run paused; in-flight requests will finish");
-	return invariant(getNovella(bookId), "Novella not found after pausing");
+	await setStatus(bookId, "paused");
+	await addLog(bookId, "Run paused; in-flight requests will finish");
+	return invariant(await getNovella(bookId), "Novella not found after pausing");
 }
 
-export function resetRun(bookId: string): NovellaView {
-	if (!project(bookId)) throw new Error("Novella not found");
+export async function resetRun(bookId: string): Promise<NovellaView> {
+	if (!(await project(bookId))) throw new Error("Novella not found");
 	const state = active.get(bookId);
 	if (state?.running) throw new Error("Pause the run before resetting");
-	db.prepare("DELETE FROM tasks WHERE book_id=?").run(bookId);
-	db.prepare("DELETE FROM chapters WHERE book_id=?").run(bookId);
-	db.prepare("DELETE FROM issues WHERE book_id=?").run(bookId);
-	db.prepare("DELETE FROM usage WHERE book_id=?").run(bookId);
-	setStatus(bookId, "idle");
-	addLog(bookId, "Run reset");
-	return invariant(getNovella(bookId), "Novella not found after resetting");
+	await db.prepare("DELETE FROM tasks WHERE book_id=?").run(bookId);
+	await db.prepare("DELETE FROM chapters WHERE book_id=?").run(bookId);
+	await db.prepare("DELETE FROM issues WHERE book_id=?").run(bookId);
+	await db.prepare("DELETE FROM usage WHERE book_id=?").run(bookId);
+	await setStatus(bookId, "idle");
+	await addLog(bookId, "Run reset");
+	return invariant(
+		await getNovella(bookId),
+		"Novella not found after resetting",
+	);
 }
 
 export async function retryFailedRun(bookId: string): Promise<NovellaView> {
-	const p = project(bookId);
+	const p = await project(bookId);
 	if (!p) throw new Error("Novella not found");
 	if (p.status !== "failed") {
-		return invariant(getNovella(bookId), "Novella not found while retrying");
+		return invariant(
+			await getNovella(bookId),
+			"Novella not found while retrying",
+		);
 	}
-	db.prepare(
-		"UPDATE tasks SET status='queued', error=NULL WHERE book_id=? AND status='failed'",
-	).run(bookId);
-	setStatus(bookId, "idle");
-	addLog(bookId, "Failed tasks queued for retry");
+	await db
+		.prepare(
+			"UPDATE tasks SET status='queued', error=NULL WHERE book_id=? AND status='failed'",
+		)
+		.run(bookId);
+	await setStatus(bookId, "idle");
+	await addLog(bookId, "Failed tasks queued for retry");
 	return startRun(bookId);
 }
 
@@ -452,18 +455,18 @@ function estimate(task: TaskRow, s: Settings) {
 		usd: ((1600 * price.input + maxOut * price.output) / 1e6) * 1.2,
 	};
 }
-function canReserve(
+async function canReserve(
 	bookId: string,
 	task: TaskRow,
 	amount: number,
 	s: Settings,
 ) {
-	const c = money(bookId);
-	const envelopeSpent = db
+	const c = await money(bookId);
+	const envelopeSpent = (await db
 		.prepare(
 			"SELECT COALESCE(SUM(u.cost_usd + u.reserved_usd),0) value FROM usage u JOIN tasks t ON t.id=u.task_id WHERE u.book_id=? AND t.envelope=?",
 		)
-		.get(bookId, task.envelope) as { value: number };
+		.get(bookId, task.envelope)) as { value: number };
 	const limit = task.envelope === "drafting" ? s.draftingUsd : s.reserveUsd;
 	return (
 		Number.isFinite(amount) &&
@@ -475,19 +478,22 @@ function canReserve(
 function bounded(value: string, max: number): string {
 	return value.length <= max ? value : `${value.slice(0, max)}…`;
 }
-function dependencyContext(bookId: string, task: TaskRow): string {
+async function dependencyContext(
+	bookId: string,
+	task: TaskRow,
+): Promise<string> {
 	const seen = new Set<string>();
 	const chunks: string[] = [];
 	let size = 0;
-	const visit = (ids: string[]) => {
+	const visit = async (ids: string[]) => {
 		for (const id of ids) {
 			if (seen.has(id) || size >= 24000) continue;
 			seen.add(id);
-			const row = db
+			const row = (await db
 				.prepare(
 					"SELECT type,status,result,deps FROM tasks WHERE id=? AND book_id=?",
 				)
-				.get(id, bookId) as
+				.get(id, bookId)) as
 				| {
 						type: string;
 						status: TaskStatus;
@@ -505,29 +511,29 @@ function dependencyContext(bookId: string, task: TaskRow): string {
 			const part = `${row.type}: ${bounded(result, 7000)}`;
 			chunks.push(part);
 			size += part.length;
-			visit(parse<string[]>(row.deps));
+			await visit(parse<string[]>(row.deps));
 		}
 	};
-	visit(parse<string[]>(task.deps));
+	await visit(parse<string[]>(task.deps));
 	return bounded(chunks.join("\n"), 24000);
 }
-function taskPrompt(
+async function taskPrompt(
 	bookId: string,
 	task: TaskRow,
-): { system: string; user: string; json: boolean } {
+): Promise<{ system: string; user: string; json: boolean }> {
 	const p = invariant(
-		project(bookId),
+		await project(bookId),
 		"Novella not found while creating prompt",
 	);
 	const brief = parse<Brief>(p.brief);
 	const chapters = (
-		db
+		(await db
 			.prepare(
 				"SELECT number,title,content FROM chapters WHERE book_id=? ORDER BY number",
 			)
-			.all(bookId) as Array<{ number: number; title: string; content: string }>
+			.all(bookId)) as Array<{ number: number; title: string; content: string }>
 	).map((chapter) => ({ ...chapter, content: bounded(chapter.content, 2500) }));
-	const context = `Brief: ${bounded(JSON.stringify(brief), 8000)}\nCompleted dependency results:\n${dependencyContext(bookId, task)}\nExisting chapters: ${bounded(JSON.stringify(chapters), 12000)}`;
+	const context = `Brief: ${bounded(JSON.stringify(brief), 8000)}\nCompleted dependency results:\n${await dependencyContext(bookId, task)}\nExisting chapters: ${bounded(JSON.stringify(chapters), 12000)}`;
 	if (task.type === "writer")
 		return {
 			system:
@@ -564,18 +570,22 @@ async function execute(
 	let fallbackUsed = false;
 	for (let attempt = 1; attempt <= s.retryMax + 1; attempt++) {
 		const e = estimate({ ...task, model }, s);
-		if (!canReserve(bookId, task, e.usd, s))
+		if (!(await canReserve(bookId, task, e.usd, s)))
 			throw new Error("budget_exhausted");
-		db.prepare(
-			"UPDATE tasks SET status=?, attempts=?, model=?, reserved_usd=? WHERE id=?",
-		).run("running", attempt, model, e.usd, task.id);
-		db.prepare(
-			"INSERT INTO usage (id,task_id,book_id,attempt,model,reserved_usd,created_at) VALUES (?,?,?,?,?,?,?)",
-		).run(randomUUID(), task.id, bookId, attempt, model, e.usd, now());
+		await db
+			.prepare(
+				"UPDATE tasks SET status=?, attempts=?, model=?, reserved_usd=? WHERE id=?",
+			)
+			.run("running", attempt, model, e.usd, task.id);
+		await db
+			.prepare(
+				"INSERT INTO usage (id,task_id,book_id,attempt,model,reserved_usd,created_at) VALUES (?,?,?,?,?,?,?)",
+			)
+			.run(randomUUID(), task.id, bookId, attempt, model, e.usd, now());
 		try {
 			const result = await chatOnce({
 				model,
-				...taskPrompt(bookId, task),
+				...(await taskPrompt(bookId, task)),
 				temperature: task.type === "auditor" ? 0.2 : 0.6,
 				maxTokens: e.maxOut,
 				apiKey,
@@ -604,13 +614,17 @@ async function execute(
 					);
 				}
 			})();
-			db.prepare(
-				"UPDATE usage SET input_tokens=?,output_tokens=?,cost_usd=?,reserved_usd=0 WHERE task_id=? AND attempt=?",
-			).run(result.inputTokens, result.outputTokens, cost, task.id, attempt);
-			db.prepare(
-				"UPDATE tasks SET status=?,cost_usd=?,reserved_usd=0,result=?,error=NULL WHERE id=?",
-			).run("completed", cost, json(parsed), task.id);
-			applyResult(bookId, task, parsed);
+			await db
+				.prepare(
+					"UPDATE usage SET input_tokens=?,output_tokens=?,cost_usd=?,reserved_usd=0 WHERE task_id=? AND attempt=?",
+				)
+				.run(result.inputTokens, result.outputTokens, cost, task.id, attempt);
+			await db
+				.prepare(
+					"UPDATE tasks SET status=?,cost_usd=?,reserved_usd=0,result=?,error=NULL WHERE id=?",
+				)
+				.run("completed", cost, json(parsed), task.id);
+			await applyResult(bookId, task, parsed);
 			return;
 		} catch (error) {
 			const retryable = error instanceof GroqError ? error.retryable : false;
@@ -625,32 +639,38 @@ async function execute(
 				!fallbackUsed &&
 				model !== s.fallbackModel
 			) {
-				db.prepare(
-					"UPDATE usage SET uncertain=1,cost_usd=reserved_usd,reserved_usd=0,error=? WHERE task_id=? AND attempt=?",
-				).run(message, task.id, attempt);
+				await db
+					.prepare(
+						"UPDATE usage SET uncertain=1,cost_usd=reserved_usd,reserved_usd=0,error=? WHERE task_id=? AND attempt=?",
+					)
+					.run(message, task.id, attempt);
 				model = s.fallbackModel;
 				fallbackUsed = true;
 				continue;
 			}
 			if (retryable && attempt <= s.retryMax) {
-				db.prepare(
-					"UPDATE usage SET uncertain=1,cost_usd=reserved_usd,reserved_usd=0,error=? WHERE task_id=? AND attempt=?",
-				).run(message, task.id, attempt);
+				await db
+					.prepare(
+						"UPDATE usage SET uncertain=1,cost_usd=reserved_usd,reserved_usd=0,error=? WHERE task_id=? AND attempt=?",
+					)
+					.run(message, task.id, attempt);
 				await new Promise((resolve) => setTimeout(resolve, wait));
 				continue;
 			}
-			db.prepare(
-				"UPDATE usage SET uncertain=1,cost_usd=reserved_usd,reserved_usd=0,error=? WHERE task_id=? AND attempt=?",
-			).run(message, task.id, attempt);
-			db.prepare(
-				"UPDATE tasks SET status=?,reserved_usd=0,error=? WHERE id=?",
-			).run("failed", message, task.id);
+			await db
+				.prepare(
+					"UPDATE usage SET uncertain=1,cost_usd=reserved_usd,reserved_usd=0,error=? WHERE task_id=? AND attempt=?",
+				)
+				.run(message, task.id, attempt);
+			await db
+				.prepare("UPDATE tasks SET status=?,reserved_usd=0,error=? WHERE id=?")
+				.run("failed", message, task.id);
 			throw error;
 		}
 	}
 }
 
-function applyResult(
+async function applyResult(
 	bookId: string,
 	task: TaskRow,
 	result: Record<string, unknown>,
@@ -666,37 +686,45 @@ function applyResult(
 			typeof result.title === "string"
 				? result.title
 				: `Chapter ${task.chapter}`;
-		db.prepare(
-			"INSERT INTO chapters (book_id,number,title,content) VALUES (?,?,?,?) ON CONFLICT(book_id,number) DO UPDATE SET title=excluded.title,content=excluded.content",
-		).run(bookId, task.chapter ?? null, title, content);
+		await db
+			.prepare(
+				"INSERT INTO chapters (book_id,number,title,content) VALUES (?,?,?,?) ON CONFLICT(book_id,number) DO UPDATE SET title=excluded.title,content=excluded.content",
+			)
+			.run(bookId, task.chapter ?? null, title, content);
 	} else if (task.type === "auditor") {
-		db.prepare("DELETE FROM issues WHERE book_id=?").run(bookId);
+		await db.prepare("DELETE FROM issues WHERE book_id=?").run(bookId);
 		for (const issue of Array.isArray(result.issues) ? result.issues : []) {
 			const i = issue as Record<string, unknown>;
-			db.prepare(
-				"INSERT INTO issues (id,book_id,severity,chapter_number,evidence,fix) VALUES (?,?,?,?,?,?)",
-			).run(
-				randomUUID(),
-				bookId,
-				String(i.severity ?? "medium"),
-				typeof i.chapter === "number" ? i.chapter : null,
-				String(i.evidence ?? ""),
-				i.fix == null ? null : String(i.fix),
-			);
+			await db
+				.prepare(
+					"INSERT INTO issues (id,book_id,severity,chapter_number,evidence,fix) VALUES (?,?,?,?,?,?)",
+				)
+				.run(
+					randomUUID(),
+					bookId,
+					String(i.severity ?? "medium"),
+					typeof i.chapter === "number" ? i.chapter : null,
+					String(i.evidence ?? ""),
+					i.fix == null ? null : String(i.fix),
+				);
 		}
 		const settings = parse<Settings>(
-			invariant(project(bookId), "Novella not found while applying result")
-				.settings,
+			invariant(
+				await project(bookId),
+				"Novella not found while applying result",
+			).settings,
 		);
 		const issueCount = (
-			db
+			(await db
 				.prepare("SELECT COUNT(*) n FROM issues WHERE book_id=?")
-				.get(bookId) as { n: number }
+				.get(bookId)) as { n: number }
 		).n;
 		if (settings.reviseRounds < 1 || issueCount === 0) {
-			db.prepare(
-				"UPDATE tasks SET status='completed', result=? WHERE book_id=? AND type='editor'",
-			).run(json({ skipped: true }), bookId);
+			await db
+				.prepare(
+					"UPDATE tasks SET status='completed', result=? WHERE book_id=? AND type='editor'",
+				)
+				.run(json({ skipped: true }), bookId);
 		}
 	} else if (task.type === "editor") {
 		for (const chapter of Array.isArray(result.chapters)
@@ -704,53 +732,67 @@ function applyResult(
 			: []) {
 			const c = chapter as Record<string, unknown>;
 			if (typeof c.number === "number" && typeof c.content === "string")
-				db.prepare(
-					"UPDATE chapters SET content=?,revised=1 WHERE book_id=? AND number=?",
-				).run(c.content, bookId, c.number);
+				await db
+					.prepare(
+						"UPDATE chapters SET content=?,revised=1 WHERE book_id=? AND number=?",
+					)
+					.run(c.content, bookId, c.number);
 		}
 	}
 }
 
 async function pump(bookId: string, apiKey: string): Promise<void> {
-	const p = project(bookId);
+	const p = await project(bookId);
 	if (!p || p.status !== "running") return;
 	const s = parse<Settings>(p.settings);
 	const state = active.get(bookId) ?? {
 		running: 0,
 		models: new Map(),
 		paused: false,
+		pumping: false,
+		claimed: new Set(),
 	};
 	active.set(bookId, state);
+	if (state.pumping) return;
+	state.pumping = true;
 	while (!state.paused && state.running < s.maxConcurrent) {
-		const rows = db
+		const rows = (await db
 			.prepare(
-				"SELECT id,book_id,type,chapter_number AS chapter,status,model,attempts,cost_usd AS cost,reserved_usd AS reservedUsd,error,deps,result,envelope FROM tasks WHERE book_id=? AND status='queued' ORDER BY rowid",
+				"SELECT id,book_id,type,chapter_number AS chapter,status,model,attempts,cost_usd AS cost,reserved_usd AS reservedUsd,error,deps,result,envelope FROM tasks WHERE book_id=? AND status='queued' ORDER BY CASE type WHEN 'planner' THEN 1 WHEN 'bible' THEN 2 WHEN 'outline' THEN 3 WHEN 'writer' THEN 4 WHEN 'auditor' THEN 5 WHEN 'editor' THEN 6 ELSE 7 END, chapter_number, id",
 			)
-			.all(bookId) as unknown as TaskRow[];
-		const task = rows.find((t) =>
-			parse<string[]>(t.deps).every(
-				(id) =>
-					(
-						db.prepare("SELECT status FROM tasks WHERE id=?").get(id) as
-							| { status?: string }
-							| undefined
-					)?.status === "completed",
-			),
-		);
+			.all(bookId)) as unknown as TaskRow[];
+		let task: TaskRow | undefined;
+		for (const candidate of rows) {
+			if (state.claimed.has(candidate.id)) continue;
+			const dependencies = await Promise.all(
+				parse<string[]>(candidate.deps).map(
+					async (id) =>
+						(
+							(await db
+								.prepare("SELECT status FROM tasks WHERE id=?")
+								.get(id)) as { status?: string } | undefined
+						)?.status === "completed",
+				),
+			);
+			if (dependencies.every(Boolean)) {
+				task = candidate;
+				break;
+			}
+		}
 		if (!task) {
-			const unfinished = db
+			const unfinished = (await db
 				.prepare(
 					"SELECT COUNT(*) n FROM tasks WHERE book_id=? AND status NOT IN ('completed','failed')",
 				)
-				.get(bookId) as { n: number };
-			const failed = db
+				.get(bookId)) as { n: number };
+			const failed = (await db
 				.prepare(
 					"SELECT COUNT(*) n FROM tasks WHERE book_id=? AND status='failed'",
 				)
-				.get(bookId) as { n: number };
+				.get(bookId)) as { n: number };
 			if (!unfinished.n) {
-				setStatus(bookId, failed.n ? "failed" : "completed");
-				addLog(bookId, failed.n ? "Run failed" : "Run completed");
+				await setStatus(bookId, failed.n ? "failed" : "completed");
+				await addLog(bookId, failed.n ? "Run failed" : "Run completed");
 			}
 			break;
 		}
@@ -758,25 +800,28 @@ async function pump(bookId: string, apiKey: string): Promise<void> {
 		if (count >= s.perModelConcurrency) break;
 		state.running++;
 		state.models.set(task.model, count + 1);
+		state.claimed.add(task.id);
 		void execute(bookId, task, s, apiKey)
 			.then(() => {
+				state.claimed.delete(task.id);
 				state.running--;
 				state.models.set(task.model, (state.models.get(task.model) ?? 1) - 1);
 				void pump(bookId, apiKey);
 			})
-			.catch((error: unknown) => {
+			.catch(async (error: unknown) => {
+				state.claimed.delete(task.id);
 				state.running--;
 				state.models.set(
 					task.model,
 					Math.max(0, (state.models.get(task.model) ?? 1) - 1),
 				);
 				if (error instanceof Error && error.message === "budget_exhausted") {
-					setStatus(bookId, "budget_exhausted");
+					await setStatus(bookId, "budget_exhausted");
 					state.paused = true;
-					addLog(bookId, "Budget reservation denied");
+					await addLog(bookId, "Budget reservation denied");
 				} else {
-					setStatus(bookId, "failed");
-					addLog(
+					await setStatus(bookId, "failed");
+					await addLog(
 						bookId,
 						`Task ${task.id} failed: ${error instanceof Error ? error.message : String(error)}`,
 					);
@@ -784,25 +829,30 @@ async function pump(bookId: string, apiKey: string): Promise<void> {
 				if (!state.paused) void pump(bookId, apiKey);
 			});
 	}
+	state.pumping = false;
 }
 
-export function resumeInterruptedRuns(): void {
-	const rows = db
+export async function resumeInterruptedRuns(): Promise<void> {
+	const rows = (await db
 		.prepare("SELECT book_id FROM projects WHERE status='running'")
-		.all() as Array<{ book_id: string }>;
+		.all()) as Array<{ book_id: string }>;
 	for (const row of rows) {
-		db.prepare(
-			"UPDATE usage SET uncertain=1, cost_usd=reserved_usd, reserved_usd=0, error='Interrupted by server restart' WHERE book_id=? AND task_id IN (SELECT id FROM tasks WHERE book_id=? AND status='running')",
-		).run(row.book_id, row.book_id);
-		db.prepare(
-			"UPDATE tasks SET status='queued', reserved_usd=0 WHERE book_id=? AND status='running'",
-		).run(row.book_id);
-		setStatus(row.book_id, "paused");
-		addLog(
+		await db
+			.prepare(
+				"UPDATE usage SET uncertain=1, cost_usd=reserved_usd, reserved_usd=0, error='Interrupted by server restart' WHERE book_id=? AND task_id IN (SELECT id FROM tasks WHERE book_id=? AND status='running')",
+			)
+			.run(row.book_id, row.book_id);
+		await db
+			.prepare(
+				"UPDATE tasks SET status='queued', reserved_usd=0 WHERE book_id=? AND status='running'",
+			)
+			.run(row.book_id);
+		await setStatus(row.book_id, "paused");
+		await addLog(
 			row.book_id,
 			"Recovered after restart; in-flight reservations marked uncertain",
 		);
 	}
 }
 
-resumeInterruptedRuns();
+void resumeInterruptedRuns();
