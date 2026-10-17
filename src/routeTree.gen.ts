@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ApiRemyChatRouteImport } from './routes/api.remy-chat'
+import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
 import { Route as DemoAiChatRouteImport } from './routes/demo/ai-chat'
 import { Route as DemoAiImageRouteImport } from './routes/demo/ai-image'
 import { Route as DemoAiStructuredRouteImport } from './routes/demo/ai-structured'
@@ -62,6 +63,11 @@ const McpRoute = McpRouteImport.update({
 const ApiRemyChatRoute = ApiRemyChatRouteImport.update({
   id: '/api/remy-chat',
   path: '/api/remy-chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BooksBookIdRoute = BooksBookIdRouteImport.update({
+  id: '/books/$bookId',
+  path: '/books/$bookId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoAiChatRoute = DemoAiChatRouteImport.update({
@@ -220,6 +226,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/mcp': typeof McpRoute
   '/api/remy-chat': typeof ApiRemyChatRoute
+  '/books/$bookId': typeof BooksBookIdRoute
   '/demo/ai-chat': typeof DemoAiChatRoute
   '/demo/ai-image': typeof DemoAiImageRoute
   '/demo/ai-structured': typeof DemoAiStructuredRoute
@@ -256,6 +263,7 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/mcp': typeof McpRoute
   '/api/remy-chat': typeof ApiRemyChatRoute
+  '/books/$bookId': typeof BooksBookIdRoute
   '/demo/ai-chat': typeof DemoAiChatRoute
   '/demo/ai-image': typeof DemoAiImageRoute
   '/demo/ai-structured': typeof DemoAiStructuredRoute
@@ -293,6 +301,7 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/mcp': typeof McpRoute
   '/api/remy-chat': typeof ApiRemyChatRoute
+  '/books/$bookId': typeof BooksBookIdRoute
   '/demo/ai-chat': typeof DemoAiChatRoute
   '/demo/ai-image': typeof DemoAiImageRoute
   '/demo/ai-structured': typeof DemoAiStructuredRoute
@@ -331,6 +340,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/mcp'
     | '/api/remy-chat'
+    | '/books/$bookId'
     | '/demo/ai-chat'
     | '/demo/ai-image'
     | '/demo/ai-structured'
@@ -367,6 +377,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/mcp'
     | '/api/remy-chat'
+    | '/books/$bookId'
     | '/demo/ai-chat'
     | '/demo/ai-image'
     | '/demo/ai-structured'
@@ -403,6 +414,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/mcp'
     | '/api/remy-chat'
+    | '/books/$bookId'
     | '/demo/ai-chat'
     | '/demo/ai-image'
     | '/demo/ai-structured'
@@ -440,6 +452,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   McpRoute: typeof McpRoute
   ApiRemyChatRoute: typeof ApiRemyChatRoute
+  BooksBookIdRoute: typeof BooksBookIdRoute
   DemoAiChatRoute: typeof DemoAiChatRoute
   DemoAiImageRoute: typeof DemoAiImageRoute
   DemoAiStructuredRoute: typeof DemoAiStructuredRoute
@@ -500,6 +513,13 @@ declare module '@tanstack/react-router' {
       path: '/api/remy-chat'
       fullPath: '/api/remy-chat'
       preLoaderRoute: typeof ApiRemyChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/books/$bookId': {
+      id: '/books/$bookId'
+      path: '/books/$bookId'
+      fullPath: '/books/$bookId'
+      preLoaderRoute: typeof BooksBookIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/ai-chat': {
@@ -720,6 +740,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   McpRoute: McpRoute,
   ApiRemyChatRoute: ApiRemyChatRoute,
+  BooksBookIdRoute: BooksBookIdRoute,
   DemoAiChatRoute: DemoAiChatRoute,
   DemoAiImageRoute: DemoAiImageRoute,
   DemoAiStructuredRoute: DemoAiStructuredRoute,
