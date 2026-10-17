@@ -95,9 +95,10 @@ export default function RemyAssistant({
 
   // Sync with store for header control
   useEffect(() => {
-    return showRemyAssistant.subscribe(() => {
+    const subscription = showRemyAssistant.subscribe(() => {
       setIsOpen(showRemyAssistant.state)
     })
+    return () => subscription.unsubscribe()
   }, [])
 
   const handleToggle = () => {

@@ -19,6 +19,7 @@
   "dependencies": {
     "@faker-js/faker": "^10.3.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@neondatabase/serverless": "^1.2.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/ai": "0.69.0",
     "@tanstack/ai-anthropic": "0.22.0",
@@ -39,7 +40,7 @@
     "@tanstack/react-router-ssr-query": "1.167.3",
     "@tanstack/react-start": "1.169.1",
     "@tanstack/react-store": "0.11.2",
-    "@tanstack/react-table": "9.3.1",
+    "@tanstack/react-table": "^8.21.3",
     "@tanstack/store": "0.11.2",
     "@trpc/client": "^11.11.0",
     "@trpc/server": "^11.11.0",
@@ -67,8 +68,8 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
     "@chromatic-com/storybook": "latest",
-    "@content-collections/core": "^0.13.1",
-    "@content-collections/vite": "^0.3.0",
+    "@content-collections/core": "^0.15.3",
+    "@content-collections/vite": "^0.3.1",
     "@inlang/paraglide-js": "^2.13.1",
     "@rolldown/plugin-babel": "^0.2.3",
     "@storybook/addon-a11y": "^10.6.2",
@@ -92,12 +93,6 @@
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
     "vitest": "latest"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "lightningcss"
-    ]
   },
   "engines": {
     "node": ">=22.11.0"
