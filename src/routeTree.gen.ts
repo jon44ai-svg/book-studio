@@ -26,6 +26,7 @@ import { Route as DemoTableRouteImport } from './routes/demo/table'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoTrpcTodoRouteImport } from './routes/demo/trpc-todo'
 import { Route as DemoWorkosRouteImport } from './routes/demo/workos'
+import { Route as NovellaBookIdRouteImport } from './routes/novella.$bookId'
 import { Route as ScheduleIndexRouteImport } from './routes/schedule.index'
 import { Route as SpeakersIndexRouteImport } from './routes/speakers.index'
 import { Route as SpeakersSlugRouteImport } from './routes/speakers.$slug'
@@ -128,6 +129,11 @@ const DemoTrpcTodoRoute = DemoTrpcTodoRouteImport.update({
 const DemoWorkosRoute = DemoWorkosRouteImport.update({
   id: '/demo/workos',
   path: '/demo/workos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NovellaBookIdRoute = NovellaBookIdRouteImport.update({
+  id: '/novella/$bookId',
+  path: '/novella/$bookId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScheduleIndexRoute = ScheduleIndexRouteImport.update({
@@ -239,6 +245,7 @@ export interface FileRoutesByFullPath {
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/trpc-todo': typeof DemoTrpcTodoRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/novella/$bookId': typeof NovellaBookIdRoute
   '/speakers/$slug': typeof SpeakersSlugRoute
   '/talks/$slug': typeof TalksSlugRoute
   '/schedule/': typeof ScheduleIndexRoute
@@ -276,6 +283,7 @@ export interface FileRoutesByTo {
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/trpc-todo': typeof DemoTrpcTodoRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/novella/$bookId': typeof NovellaBookIdRoute
   '/speakers/$slug': typeof SpeakersSlugRoute
   '/talks/$slug': typeof TalksSlugRoute
   '/schedule': typeof ScheduleIndexRoute
@@ -314,6 +322,7 @@ export interface FileRoutesById {
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/trpc-todo': typeof DemoTrpcTodoRoute
   '/demo/workos': typeof DemoWorkosRoute
+  '/novella/$bookId': typeof NovellaBookIdRoute
   '/speakers/$slug': typeof SpeakersSlugRoute
   '/talks/$slug': typeof TalksSlugRoute
   '/schedule/': typeof ScheduleIndexRoute
@@ -353,6 +362,7 @@ export interface FileRouteTypes {
     | '/demo/tanstack-query'
     | '/demo/trpc-todo'
     | '/demo/workos'
+    | '/novella/$bookId'
     | '/speakers/$slug'
     | '/talks/$slug'
     | '/schedule/'
@@ -390,6 +400,7 @@ export interface FileRouteTypes {
     | '/demo/tanstack-query'
     | '/demo/trpc-todo'
     | '/demo/workos'
+    | '/novella/$bookId'
     | '/speakers/$slug'
     | '/talks/$slug'
     | '/schedule'
@@ -427,6 +438,7 @@ export interface FileRouteTypes {
     | '/demo/tanstack-query'
     | '/demo/trpc-todo'
     | '/demo/workos'
+    | '/novella/$bookId'
     | '/speakers/$slug'
     | '/talks/$slug'
     | '/schedule/'
@@ -465,6 +477,7 @@ export interface RootRouteChildren {
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   DemoTrpcTodoRoute: typeof DemoTrpcTodoRoute
   DemoWorkosRoute: typeof DemoWorkosRoute
+  NovellaBookIdRoute: typeof NovellaBookIdRoute
   SpeakersSlugRoute: typeof SpeakersSlugRoute
   TalksSlugRoute: typeof TalksSlugRoute
   ScheduleIndexRoute: typeof ScheduleIndexRoute
@@ -604,6 +617,13 @@ declare module '@tanstack/react-router' {
       path: '/demo/workos'
       fullPath: '/demo/workos'
       preLoaderRoute: typeof DemoWorkosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/novella/$bookId': {
+      id: '/novella/$bookId'
+      path: '/novella/$bookId'
+      fullPath: '/novella/$bookId'
+      preLoaderRoute: typeof NovellaBookIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schedule/': {
@@ -753,6 +773,7 @@ const rootRouteChildren: RootRouteChildren = {
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   DemoTrpcTodoRoute: DemoTrpcTodoRoute,
   DemoWorkosRoute: DemoWorkosRoute,
+  NovellaBookIdRoute: NovellaBookIdRoute,
   SpeakersSlugRoute: SpeakersSlugRoute,
   TalksSlugRoute: TalksSlugRoute,
   ScheduleIndexRoute: ScheduleIndexRoute,
@@ -775,3 +796,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
