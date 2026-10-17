@@ -13,7 +13,10 @@ type EncryptedKey = {
 	ciphertext: string;
 };
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl =
+	process.env.DATABASE_URL ??
+	process.env.POSTGRES_URL ??
+	process.env.POSTGRES_PRISMA_URL;
 const sql = databaseUrl ? neon(databaseUrl) : null;
 let schemaReady: Promise<void> | undefined;
 
