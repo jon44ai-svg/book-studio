@@ -56,6 +56,25 @@ static assets. The included `vercel.json` makes framework detection explicit.
 Variables prefixed with `VITE_` are included in the browser bundle. Keep secrets
 unprefixed so they remain server-only.
 
+## Book Studio novella generation
+
+The novella engine uses `GROQ_API_KEY` as the deployment-wide fallback. Signed-in
+users can optionally save an encrypted personal Groq key when `DATABASE_URL` and
+`GROQ_CREDENTIAL_ENCRYPTION_KEY` are configured. Personal keys are never returned
+to the browser after saving.
+
+Production deployments should use Neon Postgres for credential storage and set:
+
+```env
+DATABASE_URL=postgresql://...
+GROQ_API_KEY=gsk_...
+GROQ_CREDENTIAL_ENCRYPTION_KEY=<random-32-byte-secret>
+```
+
+Book Studio is installable as a PWA. The app shell and static assets may be
+cached, while authentication, server functions, book data, and Groq requests
+remain network-only.
+
 
 ## Setting up WorkOS
 

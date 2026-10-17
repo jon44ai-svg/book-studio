@@ -1,0 +1,19 @@
+{
+  "name": "Book Studio",
+  "short_name": "Book Studio",
+  "description": "Create and explore books with Book Studio.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f3ed",
+  "theme_color": "#f7f3ed",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/book-studio.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
