@@ -14,3 +14,7 @@ todos.json
 mcp-todos.json
 *storybook.log
 storybook-static
+
+# local data and generated cache
+data/
+.content-collections/
