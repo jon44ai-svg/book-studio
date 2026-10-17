@@ -1,5 +1,13 @@
+import os from 'node:os'
 import { defineCollection, defineConfig } from '@content-collections/core'
 import { z } from 'zod'
+
+// ponytail: Termux/Android reports os.cpus() as [], which makes content-collections
+// pass concurrency 0 to p-limit and crash. Fill the list from availableParallelism.
+if (os.cpus().length === 0) {
+  const count = os.availableParallelism?.() ?? 1
+  os.cpus = () => Array.from({ length: count }, () => ({ model: 'unknown', speed: 0, times: { user: 0, nice: 0, sys: 0, idle: 0, irq: 0 } }))
+}
 
 const speakers = defineCollection({
   name: 'speakers',
